@@ -1,0 +1,1 @@
+<h3 {{ $attributes }} class="my-4 text-xl text-center font-bold">{{ $slot }}</h3>
