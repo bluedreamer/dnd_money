@@ -5,21 +5,21 @@ Create `.env` from copy of `.env.example`
 * Change MAIL_HOST
 * Change MAIL to sendmail
 
-### Make sure apache is in server user group
-`usermod -a -G deadpair apache`
-
 ### Check storage perms
     chmod -R g+w storage/
+    chmod g+w database/
+    chmod g+w database/
 
 # New package unpacking
     composer install --optimize-autoloader --no-dev
-    npm update
+    npm install
     npm run build
 
+### Generate key if needed
+    artisan key:generate
+
 ### Update database
-    artisan migrate --seed
-    artisan db:seed ReleaseSeeder
-    artisan db:seed FeatureSeeder
+    artisan migrate 
 
 ### Setup Caching
     artisan config:cache
@@ -29,10 +29,4 @@ Create `.env` from copy of `.env.example`
 
 ### Restart php-fpm
     systemctl restart php-fpm
-
-### Generate key if needed
-    artisan key:generate
-
-### New Database install
-    artisan migrate:fresh --seed
 
