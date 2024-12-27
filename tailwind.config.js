@@ -12,6 +12,8 @@ export default {
         './resources/**/*.blade.php',
         './resources/**/*.js',
         './resources/**/*.vue',
+        './app/MoneyRules/AbstractMoneyRules.php',
+        './app/Livewire/DndCalculator.php',
     ],
     theme: {
         extend: {

@@ -74,7 +74,10 @@ abstract class AbstractMoneyRules
         foreach($this->coin_data as $coin)
         {
             $row   = &$result[];
-            $row[] = sprintf("%s (%s)", ucfirst($coin->long_name), $coin->short_name);
+            $row[] = sprintf('<span class="hidden sm:inline">%s (%s)</span><span class="sm:hidden">%s</span>',
+                ucfirst($coin->long_name),
+                $coin->short_name,
+                $coin->short_name);
             foreach($this->coin_data as $convert_to)
             {
                 if($convert_to->multiplier > $coin->multiplier)

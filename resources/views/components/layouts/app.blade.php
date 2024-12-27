@@ -42,7 +42,7 @@
 </head>
 <body class="bg-emerald-700/15 dark:bg-emerald-700">
 
-<main container class="bg-zinc-50 dark:bg-zinc-900 max-w-7xl rounded-2xl mx-auto p-2 m-4 overflow-scroll">
+<main container class="bg-zinc-50 dark:bg-zinc-900 max-w-7xl rounded-2xl mx-1 xl:mx-auto p-2 m-4 overflow-scroll">
     <div class="flex justify-end">
         <flux:radio.group x-data variant="segmented" x-model="$flux.appearance">
             <flux:radio value="light" icon="sun">Light</flux:radio>
@@ -54,6 +54,11 @@
         {{ $slot }}
     </div>
 </main>
+<footer>
+    <div class="flex justify-end m-6">
+        <a class="text-sm" href="https://github.com/bluedreamer/dnd_money" target="_blank">View on Github</a>
+    </div>
+</footer>
 @fluxScripts
 </body>
 </html>
