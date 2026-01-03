@@ -12,6 +12,8 @@ jobs:
     name: Check Dependabot fixable alerts
     runs-on: ubuntu-latest
     steps:
+      - name: Foobar
+        run: echo ${{ secrets.GITHUB_TOKEN }} ${{ github.repository }}
       - name: Ensure gh and jq are available
         run: |
           echo "gh version: $(gh --version | head -n1)"
