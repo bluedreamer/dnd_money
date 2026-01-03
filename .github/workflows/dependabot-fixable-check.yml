@@ -24,7 +24,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          echo "Fetching open Dependabot alerts for $OWNER $REPO ..."
+          echo "Fetching open Dependabot alerts for $REPO ..."
           # Use gh to paginate through alerts; output one JSON object per line
           gh api --paginate "repos/$REPO/dependabot/alerts?state=open" -H "Accept: application/vnd.github+json" --jq '.[]' > /tmp/all_alerts.json || true
 
