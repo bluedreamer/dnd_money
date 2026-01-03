@@ -2,7 +2,7 @@
 
 namespace App\MoneyRules;
 
-class FifthEdition extends AbstractMoneyRules implements IMoneyRules
+class FifthEdition extends AbstractMoneyRules
 {
     /**
      * @throws \App\Exceptions\MoneyException

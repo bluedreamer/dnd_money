@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class BasicSetMoldvay extends AbstractMoneyRules implements IMoneyRules
+class BasicSetMoldvay extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException

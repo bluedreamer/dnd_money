@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class BasicSetRulesCyclopediaIMoneyRules extends AbstractMoneyRules implements IMoneyRules
+class BasicSetRulesCyclopediaIMoneyRules extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException

@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class BasicSetHolmes extends AbstractMoneyRules implements IMoneyRules
+class BasicSetHolmes extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException

@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class FirstEdition extends AbstractMoneyRules implements IMoneyRules
+class FirstEdition extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException

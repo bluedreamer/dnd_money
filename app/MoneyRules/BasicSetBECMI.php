@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class BasicSetBECMI extends AbstractMoneyRules implements IMoneyRules
+class BasicSetBECMI extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException

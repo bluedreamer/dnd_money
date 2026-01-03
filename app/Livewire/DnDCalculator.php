@@ -148,7 +148,7 @@ class DnDCalculator extends Component
         preg_match_all($amount_pattern, $this->money_string, $matches, PREG_SET_ORDER);
         foreach($matches as $match)
         {
-            $this->money_rule->setCoin($match[1], $match[2]);
+            $this->money_rule->setCoin((int)$match[1], $match[2]);
         }
         $this->money_value  = $this->money_rule->getValue();
         $this->money_weight = $this->money_rule->getWeight();

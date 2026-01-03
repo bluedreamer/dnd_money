@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-abstract class AbstractMoneyRules
+abstract class AbstractMoneyRules implements IMoneyRules
 {
     const oz_in_lb = 16;
 
