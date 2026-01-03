@@ -33,18 +33,19 @@ jobs:
 
           if [ ! -s "$OUT" ]; then
             echo "No open Dependabot alerts returned by the API."
-            echo "::set-output name=alerts_file::$OUT"
+            jq -n '[]' > /tmp/alerts_normalized.json
+            echo "::set-output name=alerts_file::/tmp/alerts_normalized.json"
             exit 0
           fi
 
-          # Normalize and keep only fields we need.
+          # Normalize into a JSON array with the fields we need
           jq -s 'map({
               id: (.number // .id // 0),
               package: (.dependency.package.name // "unknown"),
               ecosystem: (.dependency.package.ecosystem // "unknown"),
               url: (.html_url // "unknown"),
               patched_versions: ([.security_advisory.vulnerabilities[]? | .first_patched_version] | map(select(.!=null)) | unique)
-            }) | .[]' "$OUT" > /tmp/alerts_normalized.json
+            })' "$OUT" > /tmp/alerts_normalized.json
 
           echo "::set-output name=alerts_file::/tmp/alerts_normalized.json"
 
@@ -67,78 +68,29 @@ jobs:
           ALERTS_FILE=/tmp/alerts_normalized.json
           PR_FILES=/tmp/pr_files.json
 
-          # If there were no alerts file produced, either there were no alerts or previous step exited early.
-          if [ ! -s "$ALERTS_FILE" ]; then
+          if [ ! -s "$ALERTS_FILE" ] || [ "$(jq 'length' "$ALERTS_FILE")" -eq 0 ]; then
             echo "No Dependabot alerts to evaluate. Passing."
             exit 0
           fi
 
-          # Prepare a combined string of all added lines in the PR to search quickly.
-          # Extract added lines (those starting with '+') from patches and join them.
+          # Gather all added lines from PR patches
           jq -r '.[] | .patch' "$PR_FILES" > /tmp/all_patches_raw.txt || true
-          # Extract added lines (ignore the patch headers beginning with +++ b/...)
           awk '/^\+[^+]/ { print substr($0,2) }' /tmp/all_patches_raw.txt > /tmp/pr_added_lines.txt || true
 
-          remaining_count=0
-          remaining_json="[]"
-
-          # Iterate alerts and check patched_versions presence in PR added lines.
-          jq -c '. as $a | $a' "$ALERTS_FILE" | while read -r alert; do
-            pkg=$(jq -r '.package' <<<"$alert")
-            eco=$(jq -r '.ecosystem' <<<"$alert")
-            url=$(jq -r '.url' <<<"$alert")
-            id=$(jq -r '.id' <<<"$alert")
-            # Get patched versions as newline-separated list
-            mapfile -t patched_versions < <(jq -r '.patched_versions[]?' <<<"$alert" || true)
-
-            if [ "${#patched_versions[@]}" -eq 0 ]; then
-              # Not a fixable alert (no patched versions listed) — skip.
-              continue
-            fi
-
-            # If the PR added lines mention any patched version, treat as addressed by PR.
-            matched=false
-            for pv in "${patched_versions[@]}"; do
-              # sanitize pv for literal match
-              if [ -z "$pv" ]; then
-                continue
-              fi
-
-              # Look for the patched version string in PR added lines.
-              if grep -F -- "$pv" /tmp/pr_added_lines.txt >/dev/null 2>&1; then
-                matched=true
-                break
-              fi
-
-              # Also check common patterns: "package": "1.2.3", package@1.2.3, or entries in lockfiles
-              # Search for package name + pv in added lines
-              if [ -n "$pkg" ] && grep -F -- "$pkg" /tmp/pr_added_lines.txt | grep -F -- "$pv" >/dev/null 2>&1; then
-                matched=true
-                break
-              fi
-            done
-
-            if [ "$matched" = false ]; then
-              # Still fixable and not addressed by PR -> collect for failure message
-              remaining_count=$((remaining_count+1))
-              # append to remaining_json
-              remaining_json=$(jq --arg id "$id" --arg pkg "$pkg" --arg eco "$eco" --arg url "$url" --argjson pvs "$(jq -nc '$ARGS.positional' -- "${patched_versions[@]}")" \
-                '. + [ {id: $id, package: $pkg, ecosystem: $eco, url: $url, patched_versions: $pvs } ]' <<<"$remaining_json")
-            fi
-          done
-
-          # The while loop above runs in a subshell; read back computed remaining_json/count via a second pass.
-          # Simpler: compute remaining alerts in one jq expression instead of while loop to avoid subshell scoping.
-          # We'll recompute here deterministically:
-
-          # Build a jq filter to keep alerts that have patched_versions but are NOT mentioned in PR added lines.
-          jq -n --argfile alerts "$ALERTS_FILE" --slurpfile added /tmp/pr_added_lines.txt '
-            ($alerts | map(
-              select(.patched_versions | length > 0) |
-              . as $a |
-              ($a.patched_versions | any( . as $pv | ($added[] | index($pv) ) ) ) as $addressed |
-              if $addressed then empty else $a end
-            ))' > /tmp/remaining_alerts.json
+          # Use jq --slurpfile to read alerts and added lines robustly (portable)
+          jq -n --slurpfile alerts "$ALERTS_FILE" --slurpfile added /tmp/pr_added_lines.txt '
+            def added_lines: ($added[0] // "") | split("\n");
+            ($alerts[0]
+              | map(
+                  select(.patched_versions | length > 0)
+                  | . as $a
+                  | ($a.patched_versions
+                      | any( . as $pv
+                          | (added_lines[]? | index($pv) ) )
+                    ) as $addressed
+                  | if $addressed then empty else $a end
+                )
+            )' > /tmp/remaining_alerts.json
 
           rem_count=$(jq 'length' /tmp/remaining_alerts.json || echo 0)
           if [ "$rem_count" -gt 0 ]; then
