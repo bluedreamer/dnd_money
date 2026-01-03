@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class BasicSetRulesCyclopediaIMoneyRules extends AbstractMoneyRules implements IMoneyRules
+class BasicSetRulesCyclopediaIMoneyRules extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException
@@ -15,7 +15,7 @@ class BasicSetRulesCyclopediaIMoneyRules extends AbstractMoneyRules implements I
         $this->addCoin('copper', 'cp', 1, 1 / 10);
         $this->addCoin('silver', 'sp', 10, 1 / 10);
         $this->addCoin('electrum', 'ep', 50, 1 / 10);
-        $this->addCoin('gold', 'gp', 100, 1 / 10, true);
+        $this->addCoin('gold', 'gp', 100, 1 / 10);
         $this->addCoin('platinum', 'pp', 500, 1 / 10);
     }
 

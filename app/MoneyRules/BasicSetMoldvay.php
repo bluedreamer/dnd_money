@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class BasicSetMoldvay extends AbstractMoneyRules implements IMoneyRules
+class BasicSetMoldvay extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException
@@ -15,7 +15,7 @@ class BasicSetMoldvay extends AbstractMoneyRules implements IMoneyRules
         $this->addCoin('copper', 'cp', 1, 1 / 40);
         $this->addCoin('silver', 'sp', 10, 1 / 40);
         $this->addCoin('electrum', 'ep', 50, 1 / 40);
-        $this->addCoin('gold', 'gp', 100, 1 / 40, true);
+        $this->addCoin('gold', 'gp', 100, 1 / 40);
         $this->addCoin('platinum', 'pp', 500, 1 / 40);
     }
 

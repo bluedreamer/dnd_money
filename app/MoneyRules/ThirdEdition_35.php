@@ -4,7 +4,7 @@ namespace App\MoneyRules;
 
 use App\Exceptions\MoneyException;
 
-class ThirdEdition_35 extends AbstractMoneyRules implements IMoneyRules
+class ThirdEdition_35 extends AbstractMoneyRules
 {
     /**
      * @throws MoneyException
@@ -14,7 +14,7 @@ class ThirdEdition_35 extends AbstractMoneyRules implements IMoneyRules
         parent::__construct(true);
         $this->addCoin('copper', 'cp', 1, 1 / 50);
         $this->addCoin('silver', 'sp', 10, 1 / 50);
-        $this->addCoin('gold', 'gp', 100, 1 / 50, true);
+        $this->addCoin('gold', 'gp', 100, 1 / 50);
         $this->addCoin('platinum', 'pp', 1000, 1 / 50);
     }
 
