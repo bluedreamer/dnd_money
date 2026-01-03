@@ -7,94 +7,145 @@ permissions:
   contents: read
 
 jobs:
-  check-fixable-dependabot-alerts:
+  check-fixable-dependabot-alerts-for-pr:
     name: Check Dependabot fixable alerts
     runs-on: ubuntu-latest
     env:
       REPO: ${{ github.repository }}
-      # Put your PAT / fine-grained token into the repo secret DEP_AUDIT_TOKEN
-      SECRET_TOKEN: ${{ secrets.DEP_AUDIT_TOKEN }}
-      GITHUB_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GH_TOKEN: ${{ secrets.DEP_AUDIT_TOKEN }}
     steps:
-      - name: Show runner info
+      - name: Prepare runner
         run: |
-          echo "Repo: $REPO"
+          set -euo pipefail
+          echo "Repo: $REPO PR: $PR_NUMBER"
           gh --version || true
           jq --version || true
 
-      - name: Fetch Dependabot alerts and fail if any are fixable
+      - name: Fetch open Dependabot alerts
+        id: fetch_alerts
         run: |
           set -euo pipefail
 
-          # Prefer DEP_AUDIT_TOKEN (SECRET_TOKEN) but fall back to the workflow GITHUB_TOKEN
-          TOKEN="${SECRET_TOKEN:-$GITHUB_TOKEN}"
-          if [ -z "$TOKEN" ]; then
-            echo "::error ::No token available (set DEP_AUDIT_TOKEN secret or allow GITHUB_TOKEN security-events read)"
-            exit 2
-          fi
-
-          echo "Using token from ${SECRET_TOKEN:+DEP_AUDIT_TOKEN secret}${SECRET_TOKEN:+ }${SECRET_TOKEN:+(preferred)}"
-
-          # Export to GH CLI so gh uses it, and ensure Accept header for the Dependabot alerts API
-          export GH_TOKEN="$TOKEN"
-
           OUT=/tmp/all_alerts.json
           echo "Fetching open Dependabot alerts for $REPO ..."
-          # Use gh --paginate to get all alerts (one JSON object per-line)
           gh api --paginate "repos/$REPO/dependabot/alerts?state=open&per_page=100" -H "Accept: application/vnd.github+json" --jq '.[]' > "$OUT" || true
 
           if [ ! -s "$OUT" ]; then
             echo "No open Dependabot alerts returned by the API."
-            # If using GITHUB_TOKEN and you expected alerts, the token likely lacks permission (403).
-            echo "If you expected alerts but got none, check that the token has 'security events: read' permission."
-            # Show helpful curl example for local debugging (replace TOKEN and REPO)
-            echo "Local test (replace TOKEN and OWNER/REPO):"
-            echo "curl -H 'Accept: application/vnd.github+json' -H 'Authorization: token TOKEN' 'https://api.github.com/repos/OWNER/REPO/dependabot/alerts?state=open&per_page=100'"
+            echo "::set-output name=alerts_file::$OUT"
             exit 0
           fi
 
-          # Detect alerts with a known patched version (fixable). Search multiple likely keys.
-          fixable_count=$(jq -s '
-            map(
-              select(
-                any(
-                  ..;
-                  type=="object" and (
-                    (has("first_patched_version") and (.first_patched_version != null)) or
-                    (has("firstPatchedVersion") and (.firstPatchedVersion != null)) or
-                    (has("first_patched") and (.first_patched != null))
-                  )
-                )
-              )
-            ) | length
-          ' "$OUT")
+          # Normalize and keep only fields we need.
+          jq -s 'map({
+              id: (.number // .id // 0),
+              package: (.dependency.package.name // "unknown"),
+              ecosystem: (.dependency.package.ecosystem // "unknown"),
+              url: (.html_url // "unknown"),
+              patched_versions: ([.security_advisory.vulnerabilities[]? | .first_patched_version] | map(select(.!=null)) | unique)
+            }) | .[]' "$OUT" > /tmp/alerts_normalized.json
 
-          echo "Fixable alerts found: $fixable_count"
+          echo "::set-output name=alerts_file::/tmp/alerts_normalized.json"
 
-          if [ "$fixable_count" -gt 0 ]; then
-            echo "::error ::Found ${fixable_count} fixable Dependabot alert(s). Listing them:"
-            jq -s '
-              map(
-                select(
-                  any(
-                    ..;
-                    type=="object" and (
-                      (has("first_patched_version") and (.first_patched_version != null)) or
-                      (has("firstPatchedVersion") and (.firstPatchedVersion != null)) or
-                      (has("first_patched") and (.first_patched != null))
-                    )
-                  )
-                )
-              ) | .[] |
-              {
-                dependency: (.dependency.package.name // .dependency.package // "unknown"),
-                ecosystem: (.dependency.package.ecosystem // "unknown"),
-                severity: (.security_advisory.severity // .severity // "unknown"),
-                url: (.html_url // "unknown"),
-                patched_info: (.. | objects | select(has("first_patched_version") or has("firstPatchedVersion") or has("first_patched")) | .)
-              }
-            ' "$OUT"
+      - name: Fetch PR file patches
+        id: fetch_pr_files
+        run: |
+          set -euo pipefail
+
+          echo "Fetching changed files for PR #$PR_NUMBER ..."
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" -H "Accept: application/vnd.github+json" --jq '.[]' > /tmp/pr_files_raw.json || true
+
+          # Create a compact JSON array with filename + patch (patch may be absent for binary files)
+          jq -s 'map({filename: .filename, patch: (.patch // "")})' /tmp/pr_files_raw.json > /tmp/pr_files.json
+
+          echo "::set-output name=pr_files::/tmp/pr_files.json"
+
+      - name: Compare alerts vs PR changes and fail if any remain
+        run: |
+          set -euo pipefail
+          ALERTS_FILE=/tmp/alerts_normalized.json
+          PR_FILES=/tmp/pr_files.json
+
+          # If there were no alerts file produced, either there were no alerts or previous step exited early.
+          if [ ! -s "$ALERTS_FILE" ]; then
+            echo "No Dependabot alerts to evaluate. Passing."
+            exit 0
+          fi
+
+          # Prepare a combined string of all added lines in the PR to search quickly.
+          # Extract added lines (those starting with '+') from patches and join them.
+          jq -r '.[] | .patch' "$PR_FILES" > /tmp/all_patches_raw.txt || true
+          # Extract added lines (ignore the patch headers beginning with +++ b/...)
+          awk '/^\+[^+]/ { print substr($0,2) }' /tmp/all_patches_raw.txt > /tmp/pr_added_lines.txt || true
+
+          remaining_count=0
+          remaining_json="[]"
+
+          # Iterate alerts and check patched_versions presence in PR added lines.
+          jq -c '. as $a | $a' "$ALERTS_FILE" | while read -r alert; do
+            pkg=$(jq -r '.package' <<<"$alert")
+            eco=$(jq -r '.ecosystem' <<<"$alert")
+            url=$(jq -r '.url' <<<"$alert")
+            id=$(jq -r '.id' <<<"$alert")
+            # Get patched versions as newline-separated list
+            mapfile -t patched_versions < <(jq -r '.patched_versions[]?' <<<"$alert" || true)
+
+            if [ "${#patched_versions[@]}" -eq 0 ]; then
+              # Not a fixable alert (no patched versions listed) — skip.
+              continue
+            fi
+
+            # If the PR added lines mention any patched version, treat as addressed by PR.
+            matched=false
+            for pv in "${patched_versions[@]}"; do
+              # sanitize pv for literal match
+              if [ -z "$pv" ]; then
+                continue
+              fi
+
+              # Look for the patched version string in PR added lines.
+              if grep -F -- "$pv" /tmp/pr_added_lines.txt >/dev/null 2>&1; then
+                matched=true
+                break
+              fi
+
+              # Also check common patterns: "package": "1.2.3", package@1.2.3, or entries in lockfiles
+              # Search for package name + pv in added lines
+              if [ -n "$pkg" ] && grep -F -- "$pkg" /tmp/pr_added_lines.txt | grep -F -- "$pv" >/dev/null 2>&1; then
+                matched=true
+                break
+              fi
+            done
+
+            if [ "$matched" = false ]; then
+              # Still fixable and not addressed by PR -> collect for failure message
+              remaining_count=$((remaining_count+1))
+              # append to remaining_json
+              remaining_json=$(jq --arg id "$id" --arg pkg "$pkg" --arg eco "$eco" --arg url "$url" --argjson pvs "$(jq -nc '$ARGS.positional' -- "${patched_versions[@]}")" \
+                '. + [ {id: $id, package: $pkg, ecosystem: $eco, url: $url, patched_versions: $pvs } ]' <<<"$remaining_json")
+            fi
+          done
+
+          # The while loop above runs in a subshell; read back computed remaining_json/count via a second pass.
+          # Simpler: compute remaining alerts in one jq expression instead of while loop to avoid subshell scoping.
+          # We'll recompute here deterministically:
+
+          # Build a jq filter to keep alerts that have patched_versions but are NOT mentioned in PR added lines.
+          jq -n --argfile alerts "$ALERTS_FILE" --slurpfile added /tmp/pr_added_lines.txt '
+            ($alerts | map(
+              select(.patched_versions | length > 0) |
+              . as $a |
+              ($a.patched_versions | any( . as $pv | ($added[] | index($pv) ) ) ) as $addressed |
+              if $addressed then empty else $a end
+            ))' > /tmp/remaining_alerts.json
+
+          rem_count=$(jq 'length' /tmp/remaining_alerts.json || echo 0)
+          if [ "$rem_count" -gt 0 ]; then
+            echo "::error ::Found ${rem_count} fixable Dependabot alert(s) NOT addressed by this PR. Listing them:"
+            jq -r '.[] | "- id: \(.id) package: \(.package) ecosystem: \(.ecosystem) patched_versions: \(.patched_versions | join(", ")) url: \(.url)"' /tmp/remaining_alerts.json
             exit 1
           else
-            echo "No fixable Dependabot alerts found."
+            echo "All fixable Dependabot alerts are either not present or are addressed by this PR. Passing."
+            exit 0
           fi
