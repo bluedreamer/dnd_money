@@ -3,44 +3,98 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+# We don't rely on the GITHUB_TOKEN having security_events; the job will use the secret token if provided.
 permissions:
   contents: read
-  security-events: read
 
 jobs:
   check-fixable-dependabot-alerts:
-    name: Check Dependabot fixable alerts
+    name: Check Dependabot fixable alerts (uses DEP_AUDIT_TOKEN if present)
     runs-on: ubuntu-latest
+    env:
+      REPO: ${{ github.repository }}
+      # Put your PAT / fine-grained token into the repo secret DEP_AUDIT_TOKEN
+      SECRET_TOKEN: ${{ secrets.DEP_AUDIT_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - name: Foobar
-        run: echo ${{ secrets.GITHUB_TOKEN }} ${{ github.repository }}
-      - name: Ensure gh and jq are available
+      - name: Show runner info
         run: |
-          echo "gh version: $(gh --version | head -n1)"
-          echo "jq version: $(jq --version)"
-      - name: Query Dependabot alerts and fail if any are fixable
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
+          echo "Repo: $REPO"
+          gh --version || true
+          jq --version || true
+
+      - name: Fetch Dependabot alerts and fail if any are fixable
         run: |
           set -euo pipefail
-          echo "Fetching open Dependabot alerts for $REPO ..."
-          # Use gh to paginate through alerts; output one JSON object per line
-          gh api --paginate "repos/$REPO/dependabot/alerts?state=open" -H "Accept: application/vnd.github+json" --jq '.[]' > /tmp/all_alerts.json || true
 
-          # If there are no alerts at all, the file will be empty or absent
-          if [ ! -s /tmp/all_alerts.json ]; then
-            echo "No open Dependabot alerts."
+          # Prefer DEP_AUDIT_TOKEN (SECRET_TOKEN) but fall back to the workflow GITHUB_TOKEN
+          TOKEN="${SECRET_TOKEN:-$GITHUB_TOKEN}"
+          if [ -z "$TOKEN" ]; then
+            echo "::error ::No token available (set DEP_AUDIT_TOKEN secret or allow GITHUB_TOKEN security-events read)"
+            exit 2
+          fi
+
+          echo "Using token from ${SECRET_TOKEN:+DEP_AUDIT_TOKEN secret}${SECRET_TOKEN:+ }${SECRET_TOKEN:+(preferred)}"
+
+          # Export to GH CLI so gh uses it, and ensure Accept header for the Dependabot alerts API
+          export GH_TOKEN="$TOKEN"
+
+          OUT=/tmp/all_alerts.json
+          echo "Fetching open Dependabot alerts for $REPO ..."
+          # Use gh --paginate to get all alerts (one JSON object per-line)
+          gh api --paginate "repos/$REPO/dependabot/alerts?state=open&per_page=100" -H "Accept: application/vnd.github+json" --jq '.[]' > "$OUT" || true
+
+          if [ ! -s "$OUT" ]; then
+            echo "No open Dependabot alerts returned by the API."
+            # If using GITHUB_TOKEN and you expected alerts, the token likely lacks permission (403).
+            echo "If you expected alerts but got none, check that the token has 'security events: read' permission."
+            # Show helpful curl example for local debugging (replace TOKEN and REPO)
+            echo "Local test (replace TOKEN and OWNER/REPO):"
+            echo "curl -H 'Accept: application/vnd.github+json' -H 'Authorization: token TOKEN' 'https://api.github.com/repos/OWNER/REPO/dependabot/alerts?state=open&per_page=100'"
             exit 0
           fi
 
-          # Select alerts that have at least one vulnerability with a first_patched_version (i.e. a known fix)
-          fixable_count=$(jq -s 'map(select(any(.security_advisory.vulnerabilities[]?; .first_patched_version != null))) | length' /tmp/all_alerts.json)
+          # Detect alerts with a known patched version (fixable). Search multiple likely keys.
+          fixable_count=$(jq -s '
+            map(
+              select(
+                any(
+                  ..;
+                  type=="object" and (
+                    (has("first_patched_version") and (.first_patched_version != null)) or
+                    (has("firstPatchedVersion") and (.firstPatchedVersion != null)) or
+                    (has("first_patched") and (.first_patched != null))
+                  )
+                )
+              )
+            ) | length
+          ' "$OUT")
+
+          echo "Fixable alerts found: $fixable_count"
 
           if [ "$fixable_count" -gt 0 ]; then
             echo "::error ::Found ${fixable_count} fixable Dependabot alert(s). Listing them:"
-            jq -s 'map(select(any(.security_advisory.vulnerabilities[]?; .first_patched_version != null))) | .[] | "- \(.dependency.package.name) (\(.dependency.package.ecosystem)) severity:\(.security_advisory.severity) \(.html_url)"' /tmp/all_alerts.json
-            # Emit a failure so the check is red on the PR
+            jq -s '
+              map(
+                select(
+                  any(
+                    ..;
+                    type=="object" and (
+                      (has("first_patched_version") and (.first_patched_version != null)) or
+                      (has("firstPatchedVersion") and (.firstPatchedVersion != null)) or
+                      (has("first_patched") and (.first_patched != null))
+                    )
+                  )
+                )
+              ) | .[] |
+              {
+                dependency: (.dependency.package.name // .dependency.package // "unknown"),
+                ecosystem: (.dependency.package.ecosystem // "unknown"),
+                severity: (.security_advisory.severity // .severity // "unknown"),
+                url: (.html_url // "unknown"),
+                patched_info: (.. | objects | select(has("first_patched_version") or has("firstPatchedVersion") or has("first_patched")) | .)
+              }
+            ' "$OUT"
             exit 1
           else
             echo "No fixable Dependabot alerts found."
