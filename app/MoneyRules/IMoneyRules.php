@@ -23,5 +23,5 @@ interface IMoneyRules
     public function getWeight(ValueType $value_type = ValueType::Original): string;
     public function getWeightRule(): string;
     public function getAmountRegexPattern() : string;
-//    public function setCoin(int $value, string $short_name): void;
+    public function setCoin(int $value, string $short_name): void;
 }
