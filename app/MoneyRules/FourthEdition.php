@@ -14,7 +14,7 @@ class FourthEdition extends AbstractMoneyRules implements IMoneyRules
         parent::__construct(true);
         $this->addCoin('copper', 'cp', 1, 1 / 50);
         $this->addCoin('silver', 'sp', 10, 1 / 50);
-        $this->addCoin('gold', 'gp', 100, 1 / 50, true);
+        $this->addCoin('gold', 'gp', 100, 1 / 50);
         $this->addCoin('platinum', 'pp', 10000, 1 / 50);
         $this->addCoin('astral diamond', 'ad', 1000000, 1 / 500);
     }

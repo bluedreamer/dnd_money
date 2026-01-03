@@ -15,7 +15,7 @@ class SecondEdition extends AbstractMoneyRules implements IMoneyRules
         $this->addCoin('copper', 'cp', 1, 1 / 50);
         $this->addCoin('silver', 'sp', 10, 1 / 50);
         $this->addCoin('electrum', 'ep', 50, 1 / 50);
-        $this->addCoin('gold', 'gp', 100, 1 / 50, true);
+        $this->addCoin('gold', 'gp', 100, 1 / 50);
         $this->addCoin('platinum', 'pp', 500, 1 / 50);
     }
 

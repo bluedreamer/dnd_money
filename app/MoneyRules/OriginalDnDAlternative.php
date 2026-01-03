@@ -15,7 +15,7 @@ class OriginalDnDAlternative extends AbstractMoneyRules implements IMoneyRules
         $this->addCoin('copper', 'cp', 1);
         $this->addCoin('silver', 'sp', 5);
         $this->addCoin('electrum', 'ep', 25);
-        $this->addCoin('gold', 'gp', 50, null, true);
+        $this->addCoin('gold', 'gp', 50);
         $this->addCoin('platinum', 'pp', 250);
     }
 

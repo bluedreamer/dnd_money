@@ -10,11 +10,11 @@ class FifthEdition extends AbstractMoneyRules implements IMoneyRules
     public function __construct()
     {
         parent::__construct(true);
-        $this->addCoin('copper', 'cp', 1, 1 / 50, false);
-        $this->addCoin('silver', 'sp', 10, 1 / 50, false);
-        $this->addCoin('electrum', 'ep', 50, 1 / 50, false);
-        $this->addCoin('gold', 'gp', 100, 1 / 50, true);
-        $this->addCoin('platinum', 'pp', 1000, 1 / 50, false);
+        $this->addCoin('copper', 'cp', 1, 1 / 50);
+        $this->addCoin('silver', 'sp', 10, 1 / 50);
+        $this->addCoin('electrum', 'ep', 50, 1 / 50);
+        $this->addCoin('gold', 'gp', 100, 1 / 50);
+        $this->addCoin('platinum', 'pp', 1000, 1 / 50);
     }
 
     public function getName(): string
