@@ -1,15 +1,14 @@
-name: Dependabot — block PRs with fixable alerts
+name: ci
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-# We don't rely on the GITHUB_TOKEN having security_events; the job will use the secret token if provided.
 permissions:
   contents: read
 
 jobs:
   check-fixable-dependabot-alerts:
-    name: Check Dependabot fixable alerts (uses DEP_AUDIT_TOKEN if present)
+    name: Check Dependabot fixable alerts
     runs-on: ubuntu-latest
     env:
       REPO: ${{ github.repository }}
