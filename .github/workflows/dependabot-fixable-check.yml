@@ -22,12 +22,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          echo "Fetching open Dependabot alerts for $REPO ..."
+          echo "Fetching open Dependabot alerts for $OWNER $REPO ..."
           # Use gh to paginate through alerts; output one JSON object per line
-          gh api --paginate "repos/$OWNER/$REPO/dependabot/alerts?state=open" -H "Accept: application/vnd.github+json" --jq '.[]' > /tmp/all_alerts.json || true
+          gh api --paginate "repos/$REPO/dependabot/alerts?state=open" -H "Accept: application/vnd.github+json" --jq '.[]' > /tmp/all_alerts.json || true
 
           # If there are no alerts at all, the file will be empty or absent
           if [ ! -s /tmp/all_alerts.json ]; then
