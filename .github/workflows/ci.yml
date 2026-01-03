@@ -42,7 +42,7 @@ jobs:
         run: vendor/bin/phpstan analyse  --memory-limit=2G
 
   tests:
-    name: tests
+    name: Artisan Tests
     runs-on: ubuntu-latest
 
     steps:
