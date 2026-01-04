@@ -180,11 +180,21 @@
         enabled: true
         state: started
 
+    - name: Check deploy key public part exists
+      ansible.builtin.stat:
+        path: "/home/{{ site_user }}/.ssh/id_ed25519.pub"
+      register: deploy_key_public_key_stat
+
+    - name: Read deploy key public part
+      ansible.builtin.slurp:
+        src: "/home/{{ site_user }}/.ssh/id_ed25519.pub"
+      register: deploy_key_public_key
+      when: deploy_key_public_key_stat.stat.exists
+      changed_when: false
+
     - name: Show deploy key public part (add this as a GitHub Deploy Key)
       ansible.builtin.debug:
-        msg: |
-          Add this public key to the GitHub repo Deploy Keys for read-only access:
-          {{ deploy_key.public_key | default('public key not generated/available') }}
+        msg: "{{ deploy_key_public_key.content | b64decode | trim if deploy_key_public_key_stat.stat.exists else 'public key not generated/available' }}"
 
   handlers:
     - name: Reload php-fpm
