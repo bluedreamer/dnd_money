@@ -1,0 +1,198 @@
+---
+- name: Provision DnD Money site (single vhost)
+  hosts: web_servers
+  become: true
+
+  vars:
+    site_user: dndmoney
+    site_group: dndmoney
+    domain_name: dndmoney.test
+    deploy_root: "/home/{{ site_user }}/prod"
+    # Deployer will create current as a symlink:
+    docroot: "{{ deploy_root }}/current/public"
+
+    # PHP-FPM pool + socket
+    php_fpm_pool: "dndmoney-prod"
+    php_fpm_socket: "/run/php-fpm/{{ php_fpm_pool }}.sock"
+
+    # Nginx runs as nginx user on Fedora
+    web_user: nginx
+    web_group: nginx
+
+  tasks:
+    - name: Ensure site user exists
+      ansible.builtin.user:
+        name: "{{ site_user }}"
+        create_home: true
+        generate_ssh_key: true
+        ssh_key_type: ed25519
+        state: present
+
+    - name: Ensure .vimrc exists for site user
+      ansible.builtin.copy:
+        dest: "/home/{{ site_user }}/.vimrc"
+        owner: "{{ site_user }}"
+        group: "{{ site_group }}"
+        mode: "0644"
+        content: |
+          set nocompatible
+          set ts=3
+          set sw=3
+          set et
+          set ai
+          set background=dark
+          set nohlsearch
+          set noincsearch
+          set matchpairs=(:),{:},[:],<:>
+          set ruler
+          set showcmd
+          if &diff
+            colorscheme evening
+          endif
+          syntax on
+
+    - name: Ensure .psqlrc exists for site user
+      ansible.builtin.copy:
+        dest: "/home/{{ site_user }}/.psqlrc"
+        owner: "{{ site_user }}"
+        group: "{{ site_group }}"
+        mode: "0644"
+        content: |
+          \pset pager off
+
+    - name: Ensure '.' is appended to PATH in .bashrc (site user)
+      ansible.builtin.lineinfile:
+        path: "/home/{{ site_user }}/.bashrc"
+        create: true
+        owner: "{{ site_user }}"
+        group: "{{ site_group }}"
+        mode: "0644"
+        line: 'export PATH="$PATH:."'
+        insertafter: EOF
+        state: present
+
+    - name: Allow traversal into /home/{{ site_user }} (no directory listing)
+      ansible.builtin.file:
+        path: "/home/{{ site_user }}"
+        mode: "0711"
+
+    - name: Ensure base deploy directory exists (Deployer will manage releases/shared/current)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ site_user }}"
+        group: "{{ site_group }}"
+        mode: "0750"
+      loop:
+        - "{{ deploy_root }}"
+        - "{{ deploy_root }}/releases"
+
+    - name: ACL nginx can traverse /home/{{ site_user }}
+      ansible.posix.acl:
+        path: "/home/{{ site_user }}"
+        entity: "{{ web_user }}"
+        etype: user
+        permissions: x
+        state: present
+      become: true
+
+    - name: Default ACL nginx rx on releases tree (inherit to new releases/public)
+      ansible.posix.acl:
+        path: "{{ deploy_root }}/releases"
+        entity: "{{ web_user }}"
+        etype: user
+        permissions: rx
+        default: true
+        recursive: true
+        state: present
+      become: true
+
+    - name: ACL nginx rx on releases tree (for anything already there)
+      ansible.posix.acl:
+        path: "{{ deploy_root }}/releases"
+        entity: "{{ web_user }}"
+        etype: user
+        permissions: rx
+        recursive: true
+        state: present
+      become: true
+
+    # SELinux: allow web server to read home dirs and label docroot path
+    - name: Allow web server to read user home directories (SELinux boolean)
+      ansible.posix.seboolean:
+        name: httpd_enable_homedirs
+        state: true
+        persistent: true
+
+    - name: Ensure SELinux file context for the site docroot path
+      community.general.sefcontext:
+        target: "/home/{{ site_user }}/prod(/.*)?"
+        setype: httpd_sys_content_t
+        state: present
+
+    - name: Apply SELinux contexts under /home/{{ site_user }}/prod
+      ansible.builtin.command: "restorecon -RF /home/{{ site_user }}/prod"
+      changed_when: false
+
+    - name: Create PHP session directory
+      ansible.builtin.file:
+        path: "/home/{{ site_user }}/prod/shared/sessions"
+        state: directory
+        owner: "{{ site_user }}"
+        group: "{{ site_group }}"
+        mode: "0700"
+
+    - name: Install PHP-FPM pool for DnD Money
+      ansible.builtin.template:
+        src: php-fpm-pool.conf.j2
+        dest: "/etc/php-fpm.d/{{ php_fpm_pool }}.conf"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload php-fpm
+
+    - name: Install Nginx vhost for DnD Money
+      ansible.builtin.template:
+        src: nginx-dndmoney.conf.j2
+        dest: "/etc/nginx/conf.d/{{ domain_name }}.conf"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Validate PHP-FPM configuration
+      ansible.builtin.command: php-fpm --test
+      changed_when: false
+
+    - name: Validate Nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Ensure php-fpm is enabled and started (pool exists now)
+      ansible.builtin.systemd:
+        name: php-fpm
+        enabled: true
+        state: started
+
+    - name: Ensure nginx is enabled and started
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: started
+
+    - name: Show deploy key public part (add this as a GitHub Deploy Key)
+      ansible.builtin.debug:
+        msg: |
+          Add this public key to the GitHub repo Deploy Keys for read-only access:
+          {{ deploy_key.public_key | default('public key not generated/available') }}
+
+  handlers:
+    - name: Reload php-fpm
+      ansible.builtin.systemd:
+        name: php-fpm
+        state: reloaded
+
+    - name: Reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
