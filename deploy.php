@@ -13,9 +13,9 @@ add('writable_dirs', []);
 
 // Hosts
 
-host('orion')
-    ->set('remote_user', 'dnd_money')
-    ->set('deploy_path', '~/dnd_money');
+host('dndmoney.test')
+    ->set('remote_user', 'dndmoney')
+    ->set('deploy_path', '~/prod');
 
 // Hooks
 
